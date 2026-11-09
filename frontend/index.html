@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#05090f">
+<title>VIP MASTER APK BUILDER</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#05090f;color:#eefcff;font-family:Arial,sans-serif;padding:18px}
+.wrap{max-width:760px;margin:auto}.brand{color:#00e6d0;font-weight:900;font-size:25px;text-align:center;margin:12px 0 4px}
+.sub{text-align:center;color:#8aa4ad;margin-bottom:22px}.card{background:#101923;border:1px solid #164b51;border-radius:16px;padding:16px;margin:13px 0}
+label{display:block;color:#a9c6cc;margin:12px 0 6px;font-size:14px}
+input,textarea{width:100%;padding:13px;border-radius:10px;border:1px solid #31535c;background:#071017;color:white;font-size:15px}
+textarea{min-height:180px;resize:vertical}button{width:100%;padding:15px;border:0;border-radius:12px;background:#00e6d0;color:#001515;font-weight:900;font-size:16px;margin-top:14px}
+button:disabled{opacity:.5}.muted{color:#91a7ad;font-size:13px;line-height:1.5}.status{white-space:pre-wrap;overflow-wrap:anywhere;color:#aefcf2;margin-top:12px}
+</style></head>
+<body><main class="wrap">
+<div class="brand">VIP MASTER APK BUILDER</div><div class="sub">HTML / ZIP → Real Android APK</div>
+<section class="card">
+<label>Backend API Key</label><input id="key" type="password" placeholder="अपनी hosting वाली API key डालें">
+<label>App Name</label><input id="appName" value="My HTML App" maxlength="40">
+<label>Package ID</label><input id="packageId" value="com.example.myhtmlapp">
+<label>HTML Code Paste करें</label><textarea id="html" placeholder="<!doctype html> ..."></textarea>
+<label>या HTML / ZIP फाइल चुनें</label><input id="file" type="file" accept=".html,.htm,.zip">
+<p class="muted">ZIP के root में index.html होना चाहिए। अधिकतम upload 20 MB।</p>
+<button id="build">BUILD REAL APK</button><div id="status" class="status"></div>
+</section>
+<p class="muted">यह Builder UI है। APK बनाने के लिए Android SDK + Gradle वाला backend ऑनलाइन चलना जरूरी है।</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+$("build").onclick=async()=>{
+ const key=$("key").value.trim(), file=$("file").files[0], html=$("html").value;
+ if(!key){$("status").textContent="पहले Backend API Key डालें।";return}
+ if(!file&&!html.trim()){$("status").textContent="HTML paste करें या file चुनें।";return}
+ const data=new FormData();data.append("appName",$("appName").value);data.append("packageId",$("packageId").value);
+ if(file)data.append("projectFile",file);else data.append("html",html);
+ $("build").disabled=true;$("status").textContent="Build शुरू हो रहा है… इसमें कुछ मिनट लग सकते हैं।";
+ try{
+  const r=await fetch("/api/build",{method:"POST",headers:{"x-builder-key":key},body:data});
+  const type=r.headers.get("content-type")||"";
+  if(!r.ok){const e=type.includes("json")?await r.json():{error:await r.text()};throw new Error((e.error||"Build failed")+(e.details?"\n"+e.details:""))}
+  const blob=await r.blob();if(blob.size<10000)throw new Error("APK फाइल बहुत छोटी है; डाउनलोड रोक दिया गया।");
+  const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=$("packageId").value.split(".").pop()+"-debug.apk";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  $("status").textContent="Build सफल! APK डाउनलोड शुरू हुआ।";
+ }catch(e){$("status").textContent="Build Error:\n"+e.message}
+ finally{$("build").disabled=false}
+};
+</script></body></html>
