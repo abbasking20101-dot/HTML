@@ -1,48 +1,459 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="hi">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#05090f">
 <title>VIP MASTER APK BUILDER</title>
+
 <style>
-*{box-sizing:border-box}body{margin:0;background:#05090f;color:#eefcff;font-family:Arial,sans-serif;padding:18px}
-.wrap{max-width:760px;margin:auto}.brand{color:#00e6d0;font-weight:900;font-size:25px;text-align:center;margin:12px 0 4px}
-.sub{text-align:center;color:#8aa4ad;margin-bottom:22px}.card{background:#101923;border:1px solid #164b51;border-radius:16px;padding:16px;margin:13px 0}
-label{display:block;color:#a9c6cc;margin:12px 0 6px;font-size:14px}
+*{box-sizing:border-box}
+body{margin:0;background:#05090f;color:#eefcff;font-family:Arial,sans-serif;padding:16px}
+.wrap{max-width:760px;margin:auto}
+.brand{color:#00e6d0;font-weight:900;font-size:25px;text-align:center;margin:15px 0 5px}
+.sub{text-align:center;color:#8aa4ad;margin-bottom:22px}
+.card{background:#101923;border:1px solid #164b51;border-radius:16px;padding:16px;margin:13px 0}
+label{display:block;color:#a9c6cc;margin:13px 0 6px;font-size:14px}
 input,textarea{width:100%;padding:13px;border-radius:10px;border:1px solid #31535c;background:#071017;color:white;font-size:15px}
-textarea{min-height:180px;resize:vertical}button{width:100%;padding:15px;border:0;border-radius:12px;background:#00e6d0;color:#001515;font-weight:900;font-size:16px;margin-top:14px}
-button:disabled{opacity:.5}.muted{color:#91a7ad;font-size:13px;line-height:1.5}.status{white-space:pre-wrap;overflow-wrap:anywhere;color:#aefcf2;margin-top:12px}
-</style></head>
-<body><main class="wrap">
-<div class="brand">VIP MASTER APK BUILDER</div><div class="sub">HTML / ZIP → Real Android APK</div>
+textarea{min-height:180px;resize:vertical}
+button{padding:13px;border:0;border-radius:10px;background:#00e6d0;color:#001515;font-weight:900;font-size:14px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.full{width:100%;margin-top:14px}
+.secondary{background:#24343d;color:white}
+.danger{background:#51252b;color:#fff}
+.muted{color:#91a7ad;font-size:13px;line-height:1.5}
+.status{color:#aefcf2;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;margin-top:12px}
+.progress{height:9px;background:#25343c;border-radius:20px;overflow:hidden;margin:12px 0}
+.bar{height:100%;width:0%;background:#00e6d0;transition:width .4s}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tag{font-size:12px;padding:6px 9px;border-radius:20px;background:#24343d;color:#b9d9df}
+.console{background:#050b10;border:1px solid #253b44;border-radius:10px;padding:12px;min-height:100px;max-height:300px;overflow:auto;color:#b8f7e9;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.error{color:#ff8d98}
+.success{color:#64edaa}
+.history-item{padding:10px 0;border-bottom:1px solid #263840;font-size:13px}
+.check{display:flex;align-items:center;gap:8px;margin-top:12px}
+.check input{width:auto}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.actions button{flex:1}
+</style>
+</head>
+
+<body>
+<main class="wrap">
+
+<div class="brand">VIP MASTER APK BUILDER</div>
+<div class="sub">HTML / ZIP → Real Android APK</div>
+
 <section class="card">
-<label>Backend API Key</label><input id="key" type="password" placeholder="अपनी hosting वाली API key डालें">
-<label>App Name</label><input id="appName" value="My HTML App" maxlength="40">
-<label>Package ID</label><input id="packageId" value="com.example.myhtmlapp">
-<label>HTML Code Paste करें</label><textarea id="html" placeholder="<!doctype html> ..."></textarea>
-<label>या HTML / ZIP फाइल चुनें</label><input id="file" type="file" accept=".html,.htm,.zip">
+<div class="row">
+<strong>BUILDER SETTINGS</strong>
+<span class="tag">Testing Mode</span>
+</div>
+
+<label>Backend API Key</label>
+<input id="key" type="password" placeholder="अपनी API Key डालें">
+
+<div class="check">
+<input type="checkbox" id="remember">
+<label for="remember" style="margin:0">Remember API Key on this device</label>
+</div>
+
+<label>App Name</label>
+<input id="appName" value="My HTML App" maxlength="40">
+
+<label>Package ID</label>
+<input id="packageId" value="com.example.myhtmlapp">
+
+<label>HTML Code Paste करें</label>
+<textarea id="html" placeholder="अपना पूरा HTML Code यहाँ Paste करें"></textarea>
+
+<label>या HTML / ZIP फाइल चुनें</label>
+<input id="file" type="file" accept=".html,.htm,.zip">
+
 <p class="muted">ZIP के root में index.html होना चाहिए। अधिकतम upload 20 MB।</p>
-<button id="build">BUILD REAL APK</button><div id="status" class="status"></div>
+
+<button id="build" class="full">BUILD REAL APK</button>
 </section>
-<p class="muted">यह Builder UI है। APK बनाने के लिए Android SDK + Gradle वाला backend ऑनलाइन चलना जरूरी है।</p>
+
+<section class="card">
+<div class="row">
+<strong>BUILD PROGRESS</strong>
+<span class="tag" id="buildState">IDLE</span>
+</div>
+
+<div class="progress">
+<div class="bar" id="bar"></div>
+</div>
+
+<div class="status" id="status">Build शुरू करने के लिए ऊपर बटन दबाएँ।</div>
+</section>
+
+<section class="card">
+<div class="row">
+<strong>LIVE ERROR CONSOLE</strong>
+<span class="tag">Logs</span>
+</div>
+
+<div class="console" id="console">Waiting for build...</div>
+
+<div class="actions">
+<button class="secondary" id="copyError">COPY LOGS</button>
+<button class="danger" id="clearLogs">CLEAR</button>
+</div>
+
+<button id="download" class="full" style="display:none">DOWNLOAD APK</button>
+</section>
+
+<section class="card">
+<div class="row">
+<strong>BUILD HISTORY</strong>
+<button class="secondary" id="clearHistory">CLEAR HISTORY</button>
+</div>
+<div id="history" class="muted">अभी कोई Build History नहीं है।</div>
+</section>
+
+<p class="muted">
+VIP MASTER APK BUILDER · Android SDK + JDK + Gradle Backend Required
+</p>
+
 </main>
+
 <script>
-const $=id=>document.getElementById(id);
-$("build").onclick=async()=>{
- const key=$("key").value.trim(), file=$("file").files[0], html=$("html").value;
- if(!key){$("status").textContent="पहले Backend API Key डालें।";return}
- if(!file&&!html.trim()){$("status").textContent="HTML paste करें या file चुनें।";return}
- const data=new FormData();data.append("appName",$("appName").value);data.append("packageId",$("packageId").value);
- if(file)data.append("projectFile",file);else data.append("html",html);
- $("build").disabled=true;$("status").textContent="Build शुरू हो रहा है… इसमें कुछ मिनट लग सकते हैं।";
- try{
-  const r=await fetch("/api/build",{method:"POST",headers:{"x-builder-key":key},body:data});
-  const type=r.headers.get("content-type")||"";
-  if(!r.ok){const e=type.includes("json")?await r.json():{error:await r.text()};throw new Error((e.error||"Build failed")+(e.details?"\n"+e.details:""))}
-  const blob=await r.blob();if(blob.size<10000)throw new Error("APK फाइल बहुत छोटी है; डाउनलोड रोक दिया गया।");
-  const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=$("packageId").value.split(".").pop()+"-debug.apk";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
-  $("status").textContent="Build सफल! APK डाउनलोड शुरू हुआ।";
- }catch(e){$("status").textContent="Build Error:\n"+e.message}
- finally{$("build").disabled=false}
-};
-</script></body></html>
+const $ = id => document.getElementById(id);
+
+let currentKey = "";
+let currentBuildId = "";
+let latestLogs = "";
+let pollTimer = null;
+
+function setStatus(text, state, percent) {
+  $("status").textContent = text;
+  $("buildState").textContent = state;
+  $("bar").style.width = percent + "%";
+}
+
+function addLog(text) {
+  latestLogs += text + "\n";
+  $("console").textContent = latestLogs;
+  $("console").scrollTop = $("console").scrollHeight;
+}
+
+function loadKey() {
+  try {
+    const saved = localStorage.getItem("vip_builder_key");
+    if (saved) {
+      $("key").value = saved;
+      $("remember").checked = true;
+    }
+  } catch {}
+}
+
+$("remember").addEventListener("change", () => {
+  try {
+    if ($("remember").checked) {
+      const key = $("key").value.trim();
+      if (!key) {
+        $("remember").checked = false;
+        alert("पहले API Key डालें।");
+        return;
+      }
+      localStorage.setItem("vip_builder_key", key);
+    } else {
+      localStorage.removeItem("vip_builder_key");
+    }
+  } catch {
+    alert("इस Browser में Key सेव नहीं हो सकी।");
+  }
+});
+
+$("key").addEventListener("input", () => {
+  try {
+    if ($("remember").checked) {
+      localStorage.setItem("vip_builder_key", $("key").value.trim());
+    }
+  } catch {}
+});
+
+function saveHistory(name, status, message) {
+  try {
+    let history = JSON.parse(
+      localStorage.getItem("vip_build_history") || "[]"
+    );
+
+    history.unshift({
+      name,
+      status,
+      message,
+      date: new Date().toLocaleString()
+    });
+
+    history = history.slice(0, 20);
+    localStorage.setItem("vip_build_history", JSON.stringify(history));
+    showHistory();
+  } catch {}
+}
+
+function showHistory() {
+  try {
+    const history = JSON.parse(
+      localStorage.getItem("vip_build_history") || "[]"
+    );
+
+    if (!history.length) {
+      $("history").textContent = "अभी कोई Build History नहीं है।";
+      return;
+    }
+
+    $("history").innerHTML = history.map(item => `
+      <div class="history-item">
+        <b>${escapeHtml(item.name)}</b><br>
+        Status: ${escapeHtml(item.status)}<br>
+        ${escapeHtml(item.date)}<br>
+        ${escapeHtml(item.message || "")}
+      </div>
+    `).join("");
+  } catch {
+    $("history").textContent = "History पढ़ने में समस्या हुई।";
+  }
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, c => ({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#39;"
+  }[c]));
+}
+
+async function readJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Server ने गलत Response दिया: " + text.slice(0, 1000));
+  }
+}
+
+async function checkBuild() {
+  const response = await fetch(
+    "/api/build/" + encodeURIComponent(currentBuildId),
+    {
+      headers: {"x-builder-key": currentKey},
+      cache: "no-store"
+    }
+  );
+
+  const data = await readJson(response);
+
+  if (!response.ok) {
+    throw new Error(data.error || "Build Status प्राप्त नहीं हुआ।");
+  }
+
+  if (Array.isArray(data.logs)) {
+    latestLogs = data.logs.map(log =>
+      `[${log.time || ""}] ${log.message || ""}`
+    ).join("\n");
+
+    $("console").textContent = latestLogs || "Waiting for logs...";
+    $("console").scrollTop = $("console").scrollHeight;
+  }
+
+  if (data.status === "starting") {
+    setStatus("Server Build Request स्वीकार कर रहा है...", "STARTING", 10);
+  } else if (data.status === "project") {
+    setStatus("Android Project तैयार हो रहा है...", "PROJECT", 30);
+  } else if (data.status === "gradle") {
+    setStatus("Gradle APK Build चल रहा है...", "GRADLE", 65);
+  } else if (data.status === "success") {
+    setStatus("APK सफलतापूर्वक तैयार हो गई!", "SUCCESS", 100);
+    $("download").style.display = "block";
+    $("build").disabled = false;
+    saveHistory($("appName").value, "SUCCESS", "APK तैयार है।");
+    clearInterval(pollTimer);
+    return true;
+  } else if (data.status === "failed") {
+    setStatus("BUILD FAILED:\n" + (data.error || "Unknown error"), "FAILED", 100);
+    $("console").classList.add("error");
+    addLog("BUILD ERROR: " + (data.error || "Unknown error"));
+    $("build").disabled = false;
+    saveHistory($("appName").value, "FAILED", data.error || "Unknown error");
+    clearInterval(pollTimer);
+    return true;
+  }
+
+  return false;
+}
+
+$("build").addEventListener("click", async () => {
+  currentKey = $("key").value.trim();
+
+  const file = $("file").files[0];
+  const html = $("html").value;
+
+  if (!currentKey) {
+    alert("पहले Backend API Key डालें।");
+    return;
+  }
+
+  if (!file && !html.trim()) {
+    alert("HTML paste करें या file चुनें।");
+    return;
+  }
+
+  if (pollTimer) clearInterval(pollTimer);
+
+  $("build").disabled = true;
+  $("download").style.display = "none";
+  $("console").classList.remove("error");
+  $("console").textContent = "";
+  latestLogs = "";
+
+  setStatus("Build Request भेजी जा रही है...", "CONNECTING", 5);
+  addLog("Build Request शुरू हुई।");
+
+  const data = new FormData();
+  data.append("appName", $("appName").value);
+  data.append("packageId", $("packageId").value);
+
+  if (file) {
+    data.append("projectFile", file);
+  } else {
+    data.append("html", html);
+  }
+
+  try {
+    const response = await fetch("/api/build", {
+      method: "POST",
+      headers: {"x-builder-key": currentKey},
+      body: data
+    });
+
+    const result = await readJson(response);
+
+    if (response.status !== 202 || !result.buildId) {
+      throw new Error(result.error || "Server ने Build स्वीकार नहीं किया।");
+    }
+
+    currentBuildId = result.buildId;
+    addLog("Build ID: " + currentBuildId);
+    addLog("Server ने Build Request स्वीकार कर ली।");
+
+    setStatus("Build शुरू हो गया है। Logs चेक हो रहे हैं...", "STARTING", 10);
+
+    let checks = 0;
+
+    pollTimer = setInterval(async () => {
+      checks++;
+
+      try {
+        const finished = await checkBuild();
+
+        if (finished) return;
+
+        if (checks >= 240) {
+          clearInterval(pollTimer);
+          setStatus(
+            "Status Check Timeout. Render Logs में Build की स्थिति देखें।",
+            "TIMEOUT",
+            100
+          );
+          addLog("Status polling timeout हुआ।");
+          $("build").disabled = false;
+        }
+      } catch (error) {
+        clearInterval(pollTimer);
+        setStatus("Status Error:\n" + error.message, "ERROR", 100);
+        addLog("POLL ERROR: " + error.message);
+        $("build").disabled = false;
+      }
+    }, 2000);
+
+  } catch (error) {
+    setStatus("BUILD REQUEST ERROR:\n" + error.message, "ERROR", 100);
+    addLog("ERROR: " + error.message);
+    $("console").classList.add("error");
+    saveHistory($("appName").value, "ERROR", error.message);
+    $("build").disabled = false;
+  }
+});
+
+$("download").addEventListener("click", async () => {
+  if (!currentBuildId || !currentKey) return;
+
+  $("download").disabled = true;
+  $("download").textContent = "DOWNLOADING...";
+
+  try {
+    const response = await fetch(
+      "/api/download/" + encodeURIComponent(currentBuildId),
+      {
+        headers: {"x-builder-key": currentKey}
+      }
+    );
+
+    if (!response.ok) {
+      const error = await readJson(response);
+      throw new Error(error.error || "APK Download Failed");
+    }
+
+    const blob = await response.blob();
+
+    if (blob.size < 10000) {
+      throw new Error("APK फाइल बहुत छोटी है।");
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "VIP-MASTER.apk";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+    $("status").textContent = "APK Download शुरू हो गया है।";
+    addLog("APK Download शुरू हुआ।");
+
+  } catch (error) {
+    setStatus("DOWNLOAD ERROR:\n" + error.message, "ERROR", 100);
+    addLog("DOWNLOAD ERROR: " + error.message);
+  } finally {
+    $("download").disabled = false;
+    $("download").textContent = "DOWNLOAD APK";
+  }
+});
+
+$("copyError").addEventListener("click", async () => {
+  const text = latestLogs || $("status").textContent;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copyError").textContent = "COPIED!";
+    setTimeout(() => $("copyError").textContent = "COPY LOGS", 1500);
+  } catch {
+    alert("Logs कॉपी नहीं हुए। उन्हें Select करके Copy करें।");
+  }
+});
+
+$("clearLogs").addEventListener("click", () => {
+  latestLogs = "";
+  $("console").textContent = "Console cleared.";
+  $("console").classList.remove("error");
+});
+
+$("clearHistory").addEventListener("click", () => {
+  if (confirm("क्या सारी Build History हटानी है?")) {
+    localStorage.removeItem("vip_build_history");
+    showHistory();
+  }
+});
+
+loadKey();
+showHistory();
+</script>
+</body>
+</html>
