@@ -6,7 +6,10 @@ import AdmZip from "adm-zip";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  randomUUID,
+  timingSafeEqual
+} from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +22,13 @@ const API_KEY = process.env.BUILDER_API_KEY || "";
 const FRONTEND = path.resolve(__dirname, "../frontend");
 const TEMPLATE = path.join(__dirname, "template");
 
+const GRADLE = process.env.GRADLE_BIN || "/opt/gradle-8.7/bin/gradle";
+const MAX_BUILD_TIME = 8 * 60 * 1000;
+const MAX_LOGS = 200;
+const MAX_LOG_SIZE = 3000;
+
 const builds = new Map();
+let buildRunning = false;
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -28,8 +37,7 @@ app.use(helmet({
       "script-src": ["'self'", "'unsafe-inline'"],
       "style-src": ["'self'", "'unsafe-inline'"]
     }
-  },
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  }
 }));
 
 app.use(express.static(FRONTEND));
@@ -49,14 +57,13 @@ const upload = multer({
 function safeEqual(a, b) {
   const x = Buffer.from(String(a || ""));
   const y = Buffer.from(String(b || ""));
-
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
 function requireKey(req, res, next) {
   if (!API_KEY) {
     return res.status(503).json({
-      error: "BUILDER_API_KEY server environment में सेट नहीं है।"
+      error: "BUILDER_API_KEY सेट नहीं है।"
     });
   }
 
@@ -80,9 +87,7 @@ function safePackage(value) {
   const p = String(value || "com.vipmaster.generated").trim();
 
   if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*){1,5}$/.test(p)) {
-    throw new Error(
-      "गलत Package ID। उदाहरण: com.example.mygame"
-    );
+    throw new Error("Invalid Package ID");
   }
 
   return p;
@@ -101,28 +106,26 @@ function addLog(id, message) {
   const item = builds.get(id);
   if (!item) return;
 
-  const lines = String(message || "")
-    .split(/\r?\n/)
-    .filter(line => line.trim());
+  for (const line of String(message || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
 
-  for (const line of lines) {
     item.logs.push({
       time: new Date().toISOString(),
-      message: line.slice(0, 3000)
+      message: line.slice(0, MAX_LOG_SIZE)
     });
   }
 
-  if (item.logs.length > 200) {
-    item.logs = item.logs.slice(-200);
+  if (item.logs.length > MAX_LOGS) {
+    item.logs = item.logs.slice(-MAX_LOGS);
   }
 }
 
-async function extractZipSafely(zipPath, dest) {
+async function extractZipSafely(zipPath, destination) {
   const zip = new AdmZip(zipPath);
   const entries = zip.getEntries();
 
   if (entries.length > 500) {
-    throw new Error("ZIP में 500 से ज्यादा फाइलें हैं।");
+    throw new Error("ZIP में 500 से अधिक फाइलें हैं।");
   }
 
   for (const entry of entries) {
@@ -132,21 +135,18 @@ async function extractZipSafely(zipPath, dest) {
       name.startsWith("/") ||
       name.split("/").includes("..")
     ) {
-      throw new Error("ZIP में unsafe file path मिला।");
+      throw new Error("Unsafe ZIP path मिला।");
     }
 
     if (entry.isDirectory) continue;
 
-    const target = path.resolve(dest, name);
+    const target = path.resolve(destination, name);
 
-    if (!target.startsWith(path.resolve(dest) + path.sep)) {
-      throw new Error("ZIP में invalid file path मिला।");
+    if (!target.startsWith(path.resolve(destination) + path.sep)) {
+      throw new Error("Invalid ZIP path");
     }
 
-    await fs.mkdir(path.dirname(target), {
-      recursive: true
-    });
-
+    await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, entry.getData());
   }
 }
@@ -156,20 +156,12 @@ async function writeProject(work, html, appName, packageId) {
 
   const project = path.join(work, "project");
 
-  await fs.cp(TEMPLATE, project, {
-    recursive: true
-  });
+  await fs.cp(TEMPLATE, project, { recursive: true });
 
   const appDir = path.join(project, "app");
+  const assets = path.join(appDir, "src/main/assets");
 
-  const assets = path.join(
-    appDir,
-    "src/main/assets"
-  );
-
-  await fs.mkdir(assets, {
-    recursive: true
-  });
+  await fs.mkdir(assets, { recursive: true });
 
   if (html) {
     await fs.writeFile(
@@ -180,9 +172,7 @@ async function writeProject(work, html, appName, packageId) {
   } else {
     const extracted = path.join(work, "uploaded");
 
-    await fs.mkdir(extracted, {
-      recursive: true
-    });
+    await fs.mkdir(extracted, { recursive: true });
 
     await extractZipSafely(
       path.join(work, "upload.zip"),
@@ -194,49 +184,22 @@ async function writeProject(work, html, appName, packageId) {
     try {
       await fs.access(path.join(root, "index.html"));
     } catch {
-      const items = await fs.readdir(root, {
-        withFileTypes: true
-      });
+      const items = await fs.readdir(root, { withFileTypes: true });
 
-      if (
-        items.length === 1 &&
-        items[0].isDirectory()
-      ) {
+      if (items.length === 1 && items[0].isDirectory()) {
         root = path.join(root, items[0].name);
       }
     }
 
-    await fs.access(
-      path.join(root, "index.html")
-    ).catch(() => {
-      throw new Error("ZIP में index.html नहीं मिली।");
-    });
-
-    await fs.cp(root, assets, {
-      recursive: true
-    });
+    await fs.access(path.join(root, "index.html"));
+    await fs.cp(root, assets, { recursive: true });
   }
 
-  const javaRoot = path.join(
-    appDir,
-    "src/main/java"
-  );
-
+  const javaRoot = path.join(appDir, "src/main/java");
   const oldJava = path.join(
     javaRoot,
     "com/vipmaster/generated/MainActivity.java"
   );
-
-  await fs.access(oldJava);
-
-  const packagePath = path.join(
-    javaRoot,
-    ...packageId.split(".")
-  );
-
-  await fs.mkdir(packagePath, {
-    recursive: true
-  });
 
   let java = await fs.readFile(oldJava, "utf8");
 
@@ -245,95 +208,86 @@ async function writeProject(work, html, appName, packageId) {
     "package " + packageId + ";"
   );
 
+  const packagePath = path.join(javaRoot, ...packageId.split("."));
+
+  await fs.mkdir(packagePath, { recursive: true });
+
   await fs.writeFile(
     path.join(packagePath, "MainActivity.java"),
     java
   );
 
-  await fs.rm(
-    path.join(javaRoot, "com"),
-    {
-      recursive: true,
-      force: true
-    }
-  );
+  await fs.rm(path.join(javaRoot, "com"), {
+    recursive: true,
+    force: true
+  });
 
   const manifestPath = path.join(
     appDir,
     "src/main/AndroidManifest.xml"
   );
 
-  let manifest = await fs.readFile(
-    manifestPath,
-    "utf8"
-  );
+  let manifest = await fs.readFile(manifestPath, "utf8");
 
   manifest = manifest
     .replaceAll("__PACKAGE_ID__", packageId)
     .replaceAll("__APP_LABEL__", escapeXml(appName));
 
-  await fs.writeFile(
-    manifestPath,
-    manifest
-  );
+  await fs.writeFile(manifestPath, manifest);
 
-  const gradlePath = path.join(
-    appDir,
-    "build.gradle"
-  );
+  const gradlePath = path.join(appDir, "build.gradle");
 
-  let gradle = await fs.readFile(
-    gradlePath,
-    "utf8"
-  );
+  let gradle = await fs.readFile(gradlePath, "utf8");
 
-  gradle = gradle.replaceAll(
-    "__PACKAGE_ID__",
-    packageId
-  );
+  gradle = gradle.replaceAll("__PACKAGE_ID__", packageId);
 
-  await fs.writeFile(
-    gradlePath,
-    gradle
-  );
+  await fs.writeFile(gradlePath, gradle);
 
   return project;
 }
 
-// Gradle process और उसके वास्तविक output को पढ़ना
-function runGradle(id, gradle, project) {
+function runGradle(id, project) {
   return new Promise((resolve, reject) => {
     let output = "";
     let finished = false;
 
-    const child = spawn(
-      gradle,
-      [
-        "--no-daemon",
-        "assembleDebug",
-        "--console=plain",
-        "--stacktrace"
-      ],
-      {
-        cwd: project,
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"]
-      }
-    );
+    const args = [
+      "--no-daemon",
+      "--max-workers=1",
+      "--console=plain",
+      "--stacktrace",
+      "assembleDebug"
+    ];
+
+    const env = {
+      ...process.env,
+      JAVA_TOOL_OPTIONS: [
+        process.env.JAVA_TOOL_OPTIONS || "",
+        "-Xms128m",
+        "-Xmx512m",
+        "-XX:MaxMetaspaceSize=256m",
+        "-Dfile.encoding=UTF-8"
+      ].filter(Boolean).join(" ")
+    };
+
+    const child = spawn(GRADLE, args, {
+      cwd: project,
+      env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
 
     const timer = setTimeout(() => {
+      addLog(id, "Build timeout: 8 मिनट पूरे हुए।");
       child.kill("SIGTERM");
 
       setTimeout(() => {
         if (!finished) child.kill("SIGKILL");
       }, 5000).unref();
 
-      finish(
-        new Error("Gradle Build timeout: 8 मिनट पूरे हो गए।")
-      );
-    }, 8 * 60 * 1000);
+      finish(new Error("Build timeout"));
+    }, MAX_BUILD_TIME);
 
-    function finish(error, code = 0) {
+    function finish(error, code) {
       if (finished) return;
 
       finished = true;
@@ -343,10 +297,7 @@ function runGradle(id, gradle, project) {
         error.stdout = output;
         reject(error);
       } else if (code !== 0) {
-        const err = new Error(
-          "Gradle Build Failed. Exit Code: " + code
-        );
-
+        const err = new Error("Gradle exit code: " + code);
         err.stdout = output;
         reject(err);
       } else {
@@ -354,132 +305,102 @@ function runGradle(id, gradle, project) {
       }
     }
 
-    child.stdout.on("data", data => {
-      const text = data.toString();
+    function receive(data) {
+      const chunk = data.toString();
 
-      output += text;
-
-      if (output.length > 500000) {
-        output = output.slice(-500000);
-      }
-
-      addLog(id, text);
-    });
-
-    child.stderr.on("data", data => {
-      const text = data.toString();
-
-      output += text;
+      output += chunk;
 
       if (output.length > 500000) {
         output = output.slice(-500000);
       }
 
-      addLog(id, text);
-    });
+      addLog(id, chunk);
+    }
 
-    child.on("error", error => {
-      finish(error);
-    });
+    child.stdout.on("data", receive);
+    child.stderr.on("data", receive);
+
+    child.on("error", error => finish(error));
 
     child.on("close", code => {
       finish(
-        code === 0
-          ? null
-          : new Error("Gradle process बंद हो गया।"),
+        code === 0 ? null : new Error("Gradle process failed"),
         code
       );
     });
   });
 }
 
-// BUILD API
 app.post(
   "/api/build",
   upload.single("projectFile"),
   requireKey,
   async (req, res) => {
+
+    if (buildRunning) {
+      if (req.file?.path) {
+        await fs.rm(req.file.path, { force: true });
+      }
+
+      return res.status(429).json({
+        error: "दूसरा Build पहले से चल रहा है। कृपया इंतजार करें।"
+      });
+    }
+
+    buildRunning = true;
+
     const id = randomUUID();
+    const work = path.join(os.tmpdir(), "vip-build-" + id);
 
-    const work = path.join(
-      os.tmpdir(),
-      "vip-build-" + id
-    );
-
-    builds.set(id, {
+    const item = {
       status: "starting",
       logs: [],
       error: null,
       apk: null,
       work: null,
-      createdAt: new Date().toISOString()
-    });
+      createdAt: Date.now()
+    };
 
-    // पहला और एकमात्र HTTP response
+    builds.set(id, item);
+
     res.status(202).json({
       buildId: id,
-      status: "starting",
-      message: "Build शुरू हो रहा है।"
+      status: "starting"
     });
 
     try {
-      await fs.mkdir(work, {
-        recursive: true
-      });
+      await fs.mkdir(work, { recursive: true });
 
-      const appName = safeName(
-        req.body.appName,
-        "VIP HTML App"
-      );
-
-      const packageId = safePackage(
-        req.body.packageId
-      );
+      const appName = safeName(req.body.appName, "VIP HTML App");
+      const packageId = safePackage(req.body.packageId);
 
       let html = String(req.body.html || "");
 
       if (Buffer.byteLength(html, "utf8") > 2 * 1024 * 1024) {
-        throw new Error("Pasted HTML 2 MB से बड़ी है।");
+        throw new Error("HTML 2 MB से बड़ी है।");
       }
 
       if (req.file) {
-        const ext = path.extname(
-          req.file.originalname
-        ).toLowerCase();
+        const ext = path.extname(req.file.originalname).toLowerCase();
 
         if (ext === ".zip") {
-          await fs.copyFile(
-            req.file.path,
-            path.join(work, "upload.zip")
-          );
-
+          await fs.copyFile(req.file.path, path.join(work, "upload.zip"));
           html = "";
-        } else if (
-          [".html", ".htm"].includes(ext)
-        ) {
-          html = await fs.readFile(
-            req.file.path,
-            "utf8"
-          );
+        } else if (ext === ".html" || ext === ".htm") {
+          html = await fs.readFile(req.file.path, "utf8");
         } else {
-          throw new Error(
-            "केवल HTML या ZIP फाइल अपलोड करें।"
-          );
+          throw new Error("केवल HTML या ZIP फाइल अपलोड करें।");
         }
       }
 
       if (!html && !req.file) {
-        throw new Error("HTML या ZIP फाइल दें।");
+        throw new Error("HTML या ZIP फाइल आवश्यक है।");
       }
 
       addLog(id, "HTML प्राप्त हो गई।");
+      item.status = "project";
 
-      builds.get(id).status = "project";
-
-      addLog(
-        id,
-        "Android Project तैयार किया जा रहा है।"
-      );
+      addLog(id, "Android Project तैयार हो रहा है।");
 
       const project = await writeProject(
         work,
@@ -488,18 +409,11 @@ app.post(
         packageId
       );
 
-      builds.get(id).status = "gradle";
+      item.status = "gradle";
 
-      addLog(id, "Gradle APK Build शुरू हुआ।");
+      addLog(id, "System Gradle 8.7 Build शुरू हुआ।");
 
-      const gradle = path.join(
-        project,
-        "gradlew"
-      );
-
-      await fs.chmod(gradle, 0o755);
-
-      await runGradle(id, gradle, project);
+      await runGradle(id, project);
 
       const apk = path.join(
         project,
@@ -508,42 +422,22 @@ app.post(
 
       await fs.access(apk);
 
-      const item = builds.get(id);
-
-      if (!item) {
-        throw new Error(
-          "Build Status उपलब्ध नहीं है।"
-        );
-      }
-
       item.apk = apk;
       item.work = work;
       item.status = "success";
 
-      addLog(
-        id,
-        "APK सफलतापूर्वक तैयार हो गई।"
-      );
+      addLog(id, "BUILD SUCCESSFUL");
+      addLog(id, "APK सफलतापूर्वक तैयार हुई।");
 
     } catch (error) {
       console.error("BUILD ERROR:", error);
 
-      const item = builds.get(id);
+      item.status = "failed";
+      item.error = error.message || "Build Failed";
 
-      if (item) {
-        item.status = "failed";
-        item.error = error.message || "Build failed";
+      addLog(id, "BUILD FAILED: " + item.error);
 
-        addLog(id, "BUILD ERROR: " + item.error);
-
-        if (error.stdout) {
-          addLog(id, error.stdout);
-        }
-
-        if (error.stderr) {
-          addLog(id, error.stderr);
-        }
-      }
+      if (error.stdout) addLog(id, error.stdout);
 
       await fs.rm(work, {
         recursive: true,
@@ -552,99 +446,80 @@ app.post(
 
     } finally {
       if (req.file?.path) {
-        await fs.rm(req.file.path, {
-          force: true
-        }).catch(() => {});
+        await fs.rm(req.file.path, { force: true }).catch(() => {});
       }
+
+      buildRunning = false;
     }
   }
 );
 
-// BUILD STATUS API
-app.get(
-  "/api/build/:id",
-  requireKey,
-  (req, res) => {
-    const item = builds.get(req.params.id);
+app.get("/api/build/:id", requireKey, (req, res) => {
+  const item = builds.get(req.params.id);
 
-    if (!item) {
-      return res.status(404).json({
-        error: "Build ID नहीं मिला। सर्वर Restart हुआ हो सकता है।"
-      });
-    }
-
-    res.json({
-      status: item.status,
-      logs: item.logs,
-      error: item.error
+  if (!item) {
+    return res.status(404).json({
+      error: "Build ID नहीं मिला।"
     });
   }
-);
 
-// APK DOWNLOAD API
-app.get(
-  "/api/download/:id",
-  requireKey,
-  async (req, res) => {
-    const item = builds.get(req.params.id);
+  res.json({
+    status: item.status,
+    logs: item.logs,
+    error: item.error
+  });
+});
 
-    if (
-      !item ||
-      item.status !== "success" ||
-      !item.apk
-    ) {
-      return res.status(404).json({
-        error: "APK अभी उपलब्ध नहीं है।"
-      });
-    }
+app.get("/api/download/:id", requireKey, async (req, res) => {
+  const id = req.params.id;
+  const item = builds.get(id);
 
-    try {
-      await fs.access(item.apk);
-
-      res.download(
-        item.apk,
-        "VIP-MASTER.apk",
-        async error => {
-          if (error) {
-            console.error("DOWNLOAD ERROR:", error);
-            return;
-          }
-
-          await fs.rm(item.work, {
-            recursive: true,
-            force: true
-          }).catch(() => {});
-
-          builds.delete(req.params.id);
-        }
-      );
-
-    } catch (error) {
-      res.status(404).json({
-        error: "APK फाइल नहीं मिली।"
-      });
-    }
+  if (!item || item.status !== "success" || !item.apk) {
+    return res.status(404).json({
+      error: "APK अभी तैयार नहीं है।"
+    });
   }
-);
 
-// HEALTH CHECK
-app.get("/api/health", (_req, res) => {
+  try {
+    await fs.access(item.apk);
+
+    res.download(item.apk, "VIP-MASTER.apk", async error => {
+      if (error) {
+        console.error("Download error:", error);
+        return;
+      }
+
+      await fs.rm(item.work, {
+        recursive: true,
+        force: true
+      }).catch(() => {});
+
+      builds.delete(id);
+    });
+
+  } catch {
+    res.status(404).json({
+      error: "APK फाइल नहीं मिली।"
+    });
+  }
+});
+
+app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "VIP MASTER APK BUILDER",
-    androidSdk: process.env.ANDROID_HOME || "not-configured"
+    gradle: GRADLE,
+    java: process.env.JAVA_HOME || "system",
+    activeBuild: buildRunning
   });
 });
 
-// API 404
 app.use("/api", (req, res) => {
   res.status(404).json({
-    error: "API route not found",
-    requested: req.originalUrl
+    error: "API route not found"
   });
 });
 
-// GLOBAL ERROR HANDLER
 app.use((error, req, res, next) => {
   console.error("SERVER ERROR:", error);
 
@@ -656,8 +531,5 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    "VIP MASTER APK BUILDER running on port " + PORT
-  );
+  console.log("VIP MASTER APK BUILDER running on port " + PORT);
 });
-      
