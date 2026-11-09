@@ -1,8 +1,9 @@
+
 FROM node:20-bookworm
 
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
-ENV PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools"
+ENV PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/gradle-8.7/bin"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jdk-headless unzip zip curl wget bash && \
@@ -17,14 +18,17 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
 
 RUN wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip && \
     unzip -q /tmp/gradle.zip -d /opt && rm /tmp/gradle.zip
-ENV PATH="${PATH}:/opt/gradle-8.7/bin"
 
 RUN yes | sdkmanager --licenses >/dev/null 2>&1 || true
 RUN sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
 WORKDIR /app
-COPY package.json ./
+
+COPY backend/package.json ./package.json
 RUN npm install --omit=dev
-COPY . .
+
+COPY backend/ ./
+COPY frontend/ /frontend/
+
 EXPOSE 8080
 CMD ["npm", "start"]
